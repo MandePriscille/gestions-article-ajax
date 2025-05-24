@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des Articles</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .article { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        form { margin-bottom: 20px; }
+        input, textarea, button { margin: 5px; padding: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Gestion des Articles</h1>
+
+    <!-- Formulaire pour créer/modifier un article -->
+    <form id="article-form">
+        {% csrf_token %}
+        <input type="hidden" id="article-id">
+        <div>
+            <label>Titre:</label>
+            <input type="text" id="titre" required>
+        </div>
+        <div>
+            <label>Contenu:</label>
+            <textarea id="contenu" required></textarea>
+        </div>
+        <div>
+            <label>Auteur:</label>
+            <input type="text" id="auteur" required>
+        </div>
+        <button type="submit">Enregistrer</button>
+        <button type="button" id="cancel-edit">Annuler</button>
+    </form>
+
+    <!-- Liste des articles -->
+    <h2>Liste des Articles</h2>
+    <div id="article-list">
+        {% for article in articles %}
+        <div class="article" data-id="{{ article.id }}">
+            {% comment %} <h3>{{ article.titre }}</h3> {% endcomment %}
+            <p>{{ article.contenu }}</p>
+            <p><strong>Auteur:</strong> {{ article.auteur }}</p>
+            <p><strong>Date:</strong> {{ article.date_creation }}</p>
+            <button class="edit-btn">Modifier</button>
+            <button class="delete-btn">Supprimer</button>
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            // Récupérer le token CSRF depuis le formulaire
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+            const csrftoken = getCookie('csrftoken');
+
+            // Configurer AJAX pour inclure le token CSRF
+            $.ajaxSetup({
+                beforeSend: function(xhr, settings) {
+                    if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
+                        xhr.setRequestHeader("X-CSRFToken", csrftoken);
+                    }
+                }
+            });
+
+            // Créer ou mettre à jour un article
+            $('#article-form').submit(function(e) {
+                e.preventDefault();
+                const id = $('#article-id').val();
+                const data = {
+                    titre: $('#titre').val(),
+                    contenu: $('#contenu').val(),
+                    auteur: $('#auteur').val()
+                };
+
+                const url = id ? `/articles/update/${id}/` : '/articles/create/';
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function(response) {
+                        if (id) {
+                            // Mise à jour de l'article dans la liste
+                            $(`.article[data-id="${id}"]`).replaceWith(`
+                                <div class="article" data-id="${response.id}">
+                                    <h3>${response.titre}</h3>
+                                    <p>${response.contenu}</p>
+                                    <p><strong>Auteur:</strong> ${response.auteur}</p>
+                                    <button class="edit-btn">Modifier</button>
+                                    <button class="delete-btn">Supprimer</button>
+                                </div>
+                            `);
+                        } else {
+                            // Ajout d'un nouvel article
+                            $('#article-list').prepend(`
+                                <div class="article" data-id="${response.id}">
+                                    <h3>${response.titre}</h3>
+                                    <p>${response.contenu}</p>
+                                    <p><strong>Auteur:</strong> ${response.auteur}</p>
+                                    <p><strong>Date:</strong> ${response.date_creation}</p>
+                                    <button class="edit-btn">Modifier</button>
+                                    <button class="delete-btn">Supprimer</button>
+                                </div>
+                            `);
+                        }
+                        $('#article-form')[0].reset();
+                        $('#article-id').val('');
+                        $('#cancel-edit').hide();
+                    },
+                    error: function(xhr) {
+                        alert('Erreur: ' + xhr.responseJSON.error || 'Une erreur est survenue.');
+                    }
+                });
+            });
+
+            // Charger les données d'un article pour modification
+            $(document).on('click', '.edit-btn', function() {
+                const articleDiv = $(this).closest('.article');
+                const id = articleDiv.data('id');
+                $.ajax({
+                    url: `/articles/get/${id}/`,
+                    type: 'GET',
+                    success: function(data) {
+                        $('#article-id').val(data.id);
+                        $('#titre').val(data.titre);
+                        $('#contenu').val(data.contenu);
+                        $('#auteur').val(data.auteur);
+                        $('#cancel-edit').show();
+                    },
+                    error: function(xhr) {
+                        alert('Erreur: ' + xhr.responseJSON.error);
+                    }
+                });
+            });
+
+            // Supprimer un article
+            $(document).on('click', '.delete-btn', function() {
+                const articleDiv = $(this).closest('.article');
+                const id = articleDiv.data('id');
+                if (confirm('Voulez-vous vraiment supprimer cet article ?')) {
+                    $.ajax({
+                        url: `/articles/delete/${id}/`,
+                        type: 'POST',
+                        success: function() {
+                            articleDiv.remove();
+                        },
+                        error: function(xhr) {
+                            alert('Erreur: ' + xhr.responseJSON.error);
+                        }
+                    });
+                }
+            });
+
+            // Annuler la modification
+            $('#cancel-edit').click(function() {
+                $('#article-form')[0].reset();
+                $('#article-id').val('');
+                $(this).hide();
+            }).hide();
+        });
+    </script>
+</body>
+</html>
